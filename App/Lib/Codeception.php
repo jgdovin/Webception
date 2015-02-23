@@ -111,8 +111,32 @@ class Codeception
             $test_path = file_exists($path . $test_path) ?
                  realpath($path . $test_path) : $path . $test_path;
         }
+        $config['env'] = array();
+
+        if (isset($this->config['tests'])) {
+            foreach ($this->config['tests'] as $type => $active) {
+
+                if (!$active) {
+                    break;
+                }
+
+                if ($suite = \Symfony\Component\Yaml\Yaml::parse($config['paths']['tests'] . "/$type.suite.yml")) {
+                    if (isset($suite['env'])) {
+                        $config['env'][$type] = array_keys($suite['env']);
+                    }
+                }
+            }
+        }
 
         return $config;
+    }
+
+    /*
+    * Load the Codeception Environments
+    */
+    public function loadEnvironments()
+    {
+
     }
 
     /**
@@ -160,7 +184,7 @@ class Codeception
      *
      * @param Test $test
      */
-    public function addTest(Test $test)
+        public function addTest(Test $test)
     {
         $this->tally++;
         $this->tests[$test->getType()][$test->getHash()] = $test;
@@ -209,8 +233,10 @@ class Codeception
      */
     public function run(Test $test)
     {
+        $env = $this->getEnvironments($test->getType());
+
         // Get the full command path to run the test.
-        $command = $this->getCommandPath($test->getType(), $test->getFilename());
+        $command = $this->getCommandPath($test->getType(), $test->getFilename(), $env);
 
         // Attempt to set the correct writes to Codeceptions Log path.
         @chmod($this->getLogPath(), 0777);
@@ -223,6 +249,30 @@ class Codeception
         $test->setLog($output);
 
         return $test;
+    }
+
+    /*
+     * get list of codeception
+     */
+    public function getEnvironments($type)
+    {
+        $env = array();
+
+        if (isset($_GET['env'])) {
+
+            foreach(explode(' ', $_GET['env']) as $value){
+                if ($value) {
+
+                    $value = str_replace($type . '_', '', $value);
+                    if (isset($this->config['env'][$type]) && in_array($value, $this->config['env'][$type])) {
+                        $env[] = '--env=' . $value;
+                    }
+
+                }
+            }
+        }
+
+        return $env;
     }
 
     /**
@@ -242,17 +292,22 @@ class Codeception
      * @param  string $filename Name of the Test
      * @return string Full command to execute Codeception with requred parameters.
      */
-    public function getCommandPath($type, $filename)
+    public function getCommandPath($type, $filename, $env)
     {
         // Build all the different parameters as part of the console command
-        $params = array(
+        $params = array_merge(
+            array(
             $this->config['executable'],        // Codeception Executable
             "run",                              // Command to Codeception
             "--no-colors",                      // Forcing Codeception to not use colors, if enabled in codeception.yml
             "--config=\"{$this->site->getConfig()}\"", // Full path & file of Codeception
-            $type,                              // Test Type (Acceptance, Unit, Functional)
-            $filename,                          // Filename of the Codeception test
-            "2>&1"                              // Added to force output of running executable to be streamed out
+            ),
+            $env,
+            array(
+                $type,                              // Test Type (Acceptance, Unit, Functional)
+                $filename,                          // Filename of the Codeception test
+                "2>&1"                              // Added to force output of running executable to be streamed out
+            )
         );
 
         // Build the command to be run.
